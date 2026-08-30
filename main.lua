@@ -59,6 +59,7 @@ local ICONS = {
     Upload = "rbxassetid://118488857289315",
     Plus = "rbxassetid://101123124881873",
     Clock = "rbxassetid://136533241128438",
+    Shop = "rbxassetid://121389568871142",
 }
 
 local RARITY_COLORS = {
@@ -91,6 +92,9 @@ local UIModule = {
     Callbacks = {},
     CachedEvoCandidates = {},
     CachedSellUnits = {},
+    ShopItems = {},
+    SelectedShopItemIndex = nil,
+    ShopAmount = 1,
     MacroProfiles = {},
     SelectedMacroProfile = nil,
     MacroNameInput = nil,
@@ -103,6 +107,16 @@ local UIModule = {
     _MacroProfilesSubtitle = nil,
     _MacroProfileList = nil,
     _MacroProfileScrollPosition = Vector2.zero,
+    _SetMacroProfileDropdown = nil,
+    _ShopList = nil,
+    _ShopSelectorLabel = nil,
+    _ShopBalanceLabel = nil,
+    _ShopDetailLabel = nil,
+    _ShopAmountLabel = nil,
+    _ShopAmountFill = nil,
+    _ShopPurchaseLabel = nil,
+    _ShopDropdownScrollPosition = Vector2.zero,
+    _SetShopDropdown = nil,
     _TabScrollPositions = setmetatable({}, { __mode = "k" }),
 }
 
@@ -122,6 +136,11 @@ local function create(className, properties, parent)
     if parent then
         instance.Parent = parent
     end
+    -- Roblox may translate source strings automatically based on client locale.
+    -- This dashboard intentionally owns its English status vocabulary.
+    pcall(function()
+        if instance:IsA("GuiBase2d") then instance.AutoLocalize = false end
+    end)
     return instance
 end
 
@@ -329,6 +348,7 @@ local screenGui = create("ScreenGui", {
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     DisplayOrder = 80,
+    AutoLocalize = false,
 }, nil)
 
 local parentTarget = CoreGui
@@ -455,6 +475,7 @@ local pageMeta = {
     Evolve = { Title = "Evolution Lab", Subtitle = "Plan materials and evolve your strongest unit safely." },
     Sell = { Title = "Unit Cleaner", Subtitle = "Review inventory, apply rarity filters, and sell with safeguards." },
     Team = { Title = "Automation", Subtitle = "Control runtime modules used by the current session." },
+    Shop = { Title = "Gold Shop", Subtitle = "Browse the live shop replica and purchase with exact stock limits." },
     Macro = { Title = "Macro Studio", Subtitle = "Record confirmed actions, manage profiles, and replay safely." },
 }
 
@@ -648,6 +669,7 @@ function UIModule:UpdateMacroProfiles(profiles, selected)
                 self.SelectedMacroProfile = profile
                 if self.MacroNameInput then self.MacroNameInput.Text = profile end
                 if self.Callbacks.OnMacroSelect then self.Callbacks.OnMacroSelect(profile) end
+                if self._SetMacroProfileDropdown then self._SetMacroProfileDropdown(false) end
                 self:UpdateMacroProfiles(self.MacroProfiles, profile)
             end)
         end
@@ -655,6 +677,98 @@ function UIModule:UpdateMacroProfiles(profiles, selected)
             if profileList.Parent then profileList.CanvasPosition = self._MacroProfileScrollPosition end
         end)
     end
+end
+
+local function findSelectedShopItem()
+    for _, item in ipairs(UIModule.ShopItems) do
+        if tonumber(item.Index) == tonumber(UIModule.SelectedShopItemIndex) then return item end
+    end
+    return nil
+end
+
+local function refreshShopControls()
+    local item = findSelectedShopItem()
+    local maxAmount = item and math.max(1, tonumber(item.MaxAmount) or 1) or 1
+    UIModule.ShopAmount = math.clamp(math.floor(tonumber(UIModule.ShopAmount) or 1), 1, maxAmount)
+    if UIModule._ShopSelectorLabel then
+        UIModule._ShopSelectorLabel.Text = item and item.DisplayName or "Select an item..."
+    end
+    if UIModule._ShopAmountLabel then
+        UIModule._ShopAmountLabel.Text = string.format("%d / %d", UIModule.ShopAmount, maxAmount)
+    end
+    if UIModule._ShopDetailLabel then
+        UIModule._ShopDetailLabel.Text = item and string.format(
+            "%s · %d Gold each · stock %s",
+            tostring(item.DisplayName or item.Name),
+            tonumber(item.Price) or 0,
+            item.UnlimitedStock and "∞" or tostring(tonumber(item.Stock) or 0)
+        ) or "Choose an item from the live Gold Shop replica."
+    end
+    if UIModule._ShopAmountFill then
+        local ratio = maxAmount > 1 and ((UIModule.ShopAmount - 1) / (maxAmount - 1)) or 0
+        UIModule._ShopAmountFill.Size = UDim2.new(ratio, 0, 1, 0)
+    end
+    if UIModule._ShopPurchaseLabel then
+        UIModule._ShopPurchaseLabel.Text = item
+            and string.format("Purchase · %d Gold", (tonumber(item.Price) or 0) * UIModule.ShopAmount)
+            or "Purchase"
+    end
+end
+
+function UIModule:UpdateShop(snapshot)
+    local data = snapshot or {}
+    self.ShopItems = type(data.Items) == "table" and data.Items or {}
+    local selected = findSelectedShopItem()
+    if not selected then
+        self.SelectedShopItemIndex = self.ShopItems[1] and self.ShopItems[1].Index or nil
+        self.ShopAmount = 1
+    end
+    if self._ShopBalanceLabel then
+        self._ShopBalanceLabel.Text = string.format("%d Gold available", tonumber(data.Gold) or 0)
+    end
+
+    local list = self._ShopList
+    if list then
+        self._ShopDropdownScrollPosition = list.CanvasPosition
+        clearGuiRows(list)
+        if #self.ShopItems == 0 then
+            local empty = makeLabel(list, "Gold Shop data is still loading.", 11, COLORS.TextDim, FONT_MEDIUM, Enum.TextXAlignment.Center)
+            empty.Size = UDim2.new(1, -4, 0, 44)
+        else
+            for order, item in ipairs(self.ShopItems) do
+                local active = tonumber(item.Index) == tonumber(self.SelectedShopItemIndex)
+                local row = create("TextButton", {
+                    Size = UDim2.new(1, -4, 0, 46), BackgroundColor3 = active and COLORS.AccentSoft or COLORS.Sidebar,
+                    BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order, ZIndex = 22,
+                }, list)
+                addCorner(row, 7)
+                local stroke = addStroke(row, active and COLORS.Accent or COLORS.BorderSoft, active and 0.25 or 0.15, 1)
+                local icon = makeIcon(row, ICONS.Shop, 14, active and COLORS.Accent or COLORS.TextMuted)
+                icon.Position = UDim2.fromOffset(10, 8)
+                icon.ZIndex = 23
+                local title = makeLabel(row, tostring(item.DisplayName or item.Name), 11, COLORS.Text, FONT_SEMIBOLD)
+                title.Position = UDim2.fromOffset(32, 3)
+                title.Size = UDim2.new(1, -42, 0, 19)
+                title.ZIndex = 23
+                local stock = tonumber(item.Stock) or 0
+                local detail = makeLabel(row, string.format("%d Gold · stock %s", tonumber(item.Price) or 0, item.UnlimitedStock and "∞" or tostring(stock)), 9, item.Purchasable and COLORS.Green or COLORS.Red, FONT_MEDIUM)
+                detail.Position = UDim2.fromOffset(32, 22)
+                detail.Size = UDim2.new(1, -42, 0, 16)
+                detail.ZIndex = 23
+                bindHover(row, row.BackgroundColor3, COLORS.SurfaceHover, stroke, stroke.Color, COLORS.Accent)
+                row.Activated:Connect(function()
+                    self.SelectedShopItemIndex = item.Index
+                    self.ShopAmount = 1
+                    if self._SetShopDropdown then self._SetShopDropdown(false) end
+                    self:UpdateShop(data)
+                end)
+            end
+        end
+        task.defer(function()
+            if list.Parent then list.CanvasPosition = self._ShopDropdownScrollPosition end
+        end)
+    end
+    refreshShopControls()
 end
 
 local TOGGLE_DESCRIPTIONS = {
@@ -822,11 +936,13 @@ function UIModule:UpdateEvoList(candidates)
         local accent = create("Frame", { Position = UDim2.fromOffset(0, 10), Size = UDim2.fromOffset(3, 34), BackgroundColor3 = rarityColor, BorderSizePixel = 0 }, row)
         addCorner(accent, 2)
 
-        local name = makeLabel(row, string.format("%s  ·  Lv.%d", tostring(unit.DisplayName or unit.Asset or "Unit"), tonumber(unit.Level) or 1), 11, COLORS.Text, FONT_SEMIBOLD)
+        local shiny = unit.Shiny == true
+        local displayName = (shiny and "[SHINY] " or "") .. tostring(unit.DisplayName or unit.Asset or "Unit")
+        local name = makeLabel(row, string.format("%s  ·  Lv.%d", displayName, tonumber(unit.Level) or 1), 11, shiny and COLORS.White or COLORS.Text, shiny and FONT_BOLD or FONT_SEMIBOLD)
         name.Position = UDim2.fromOffset(12, 7)
         name.Size = UDim2.new(1, -52, 0, 18)
 
-        local detail = makeLabel(row, string.format("%s  /  %s  /  %d materials", rarity:upper(), tostring(unit.Trait or "No Trait"), tonumber(unit.ReqCount) or 0), 9, rarityColor, FONT_MEDIUM)
+        local detail = makeLabel(row, string.format("%s%s  /  %s  /  %d materials", shiny and "SHINY " or "", rarity:upper(), tostring(unit.Trait or "No Trait"), tonumber(unit.ReqCount) or 0), 9, shiny and COLORS.White or rarityColor, shiny and FONT_BOLD or FONT_MEDIUM)
         detail.Position = UDim2.fromOffset(12, 27)
         detail.Size = UDim2.new(1, -52, 0, 16)
 
@@ -910,12 +1026,14 @@ function UIModule:UpdateSellList(units)
             addCorner(row, 8)
             local rowStroke = addStroke(row, selected and COLORS.Red or COLORS.BorderSoft, selected and 0.3 or 0.15, 1)
 
-            local name = makeLabel(row, string.format("%s  ·  Lv.%d", tostring(unit.DisplayName or unit.Asset or "Unit"), tonumber(unit.Level) or 1), 11, protected and COLORS.TextMuted or COLORS.Text, FONT_SEMIBOLD)
+            local shiny = unit.Shiny == true
+            local displayName = (shiny and "[SHINY] " or "") .. tostring(unit.DisplayName or unit.Asset or "Unit")
+            local name = makeLabel(row, string.format("%s  ·  Lv.%d", displayName, tonumber(unit.Level) or 1), 11, shiny and COLORS.White or (protected and COLORS.TextMuted or COLORS.Text), shiny and FONT_BOLD or FONT_SEMIBOLD)
             name.Position = UDim2.fromOffset(12, 7)
             name.Size = UDim2.new(1, -54, 0, 18)
 
-            local detailText = protected and (rarity:upper() .. "  /  PROTECTED") or (rarity:upper() .. "  /  READY TO SELL")
-            local detail = makeLabel(row, detailText, 9, protected and COLORS.Green or rarityColor, FONT_MEDIUM)
+            local detailText = (shiny and "SHINY " or "") .. (protected and (rarity:upper() .. "  /  PROTECTED") or (rarity:upper() .. "  /  READY TO SELL"))
+            local detail = makeLabel(row, detailText, 9, shiny and COLORS.White or (protected and COLORS.Green or rarityColor), shiny and FONT_BOLD or FONT_MEDIUM)
             detail.Position = UDim2.fromOffset(12, 27)
             detail.Size = UDim2.new(1, -54, 0, 16)
 
@@ -993,7 +1111,7 @@ local function buildSidebar()
 
     local navContainer = create("Frame", {
         Position = UDim2.fromOffset(12, 111),
-        Size = UDim2.new(1, -24, 0, 198),
+        Size = UDim2.new(1, -24, 0, 246),
         BackgroundTransparency = 1,
     }, sidebar)
     create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, navContainer)
@@ -1048,7 +1166,8 @@ local function buildSidebar()
     createNavButton("Evolve", "Evolution Lab", "Craft & evolve", ICONS.Sparkles, 1)
     createNavButton("Sell", "Unit Cleaner", "Filter & protect", ICONS.Cleaner, 2)
     createNavButton("Team", "Automation", "Runtime options", ICONS.Settings, 3)
-    createNavButton("Macro", "Macro Studio", "Record & replay", ICONS.Macro, 4)
+    createNavButton("Shop", "Gold Shop", "Live stock", ICONS.Shop, 4)
+    createNavButton("Macro", "Macro Studio", "Record & replay", ICONS.Macro, 5)
 
     -- Safety card
     local safetyCard = create("Frame", {
@@ -1530,6 +1649,155 @@ local function buildTeamTab(viewHost)
     end))
 end
 
+local function buildShopTab(viewHost)
+    local shopView = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false }, viewHost)
+    tabViews.Shop = shopView
+
+    local _, browserBody = createPanel(shopView, UDim2.fromOffset(0, 0), UDim2.new(0.58, -7, 1, 0), "Available items", "Live Gold Shop inventory", ICONS.Shop, COLORS.Amber)
+    local selector = create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0,
+        AutoButtonColor = false, Text = "", ZIndex = 18,
+    }, browserBody)
+    addCorner(selector, 8)
+    local selectorStroke = addStroke(selector, COLORS.BorderSoft, 0.15, 1)
+    bindHover(selector, COLORS.Sidebar, COLORS.SurfaceHover, selectorStroke, COLORS.BorderSoft, COLORS.Accent)
+    local selectorIcon = makeIcon(selector, ICONS.Shop, 14, COLORS.Accent)
+    selectorIcon.Position = UDim2.fromOffset(11, 13)
+    selectorIcon.ZIndex = 19
+    local selectorLabel = makeLabel(selector, "Select an item...", 11, COLORS.Text, FONT_SEMIBOLD)
+    selectorLabel.Position = UDim2.fromOffset(34, 0)
+    selectorLabel.Size = UDim2.new(1, -64, 1, 0)
+    selectorLabel.ZIndex = 19
+    UIModule._ShopSelectorLabel = selectorLabel
+    local selectorArrow = makeLabel(selector, "⌄", 16, COLORS.TextMuted, FONT_BOLD, Enum.TextXAlignment.Center)
+    selectorArrow.Position = UDim2.new(1, -30, 0, 0)
+    selectorArrow.Size = UDim2.fromOffset(24, 40)
+    selectorArrow.ZIndex = 19
+
+    local shopList = createScroll(browserBody)
+    shopList.Name = "GoldShopDropdown"
+    shopList.Position = UDim2.fromOffset(0, 44)
+    shopList.Size = UDim2.new(1, 0, 0, 0)
+    shopList.BackgroundColor3 = COLORS.SurfaceRaised
+    shopList.BackgroundTransparency = 0
+    shopList.BorderSizePixel = 0
+    shopList.ScrollBarImageColor3 = COLORS.Accent
+    shopList.ClipsDescendants = true
+    shopList.Visible = false
+    shopList.ZIndex = 20
+    addCorner(shopList, 8)
+    addStroke(shopList, COLORS.Border, 0.1, 1)
+    UIModule._ShopList = shopList
+
+    local shopDropdownOpen = false
+    local function setShopDropdown(open)
+        shopDropdownOpen = open == true
+        if shopDropdownOpen then
+            shopList.Visible = true
+            TweenService:Create(shopList, TWEEN_NORMAL, { Size = UDim2.new(1, 0, 0, 228) }):Play()
+            selectorArrow.Text = "⌃"
+        else
+            UIModule._ShopDropdownScrollPosition = shopList.CanvasPosition
+            TweenService:Create(shopList, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, 0) }):Play()
+            selectorArrow.Text = "⌄"
+            task.delay(TWEEN_FAST.Time, function()
+                if not shopDropdownOpen then shopList.Visible = false end
+            end)
+        end
+    end
+    UIModule._SetShopDropdown = setShopDropdown
+    selector.Activated:Connect(function() setShopDropdown(not shopDropdownOpen) end)
+
+    local guide = create("Frame", {
+        Position = UDim2.fromOffset(0, 54), Size = UDim2.new(1, 0, 0, 116),
+        BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0,
+    }, browserBody)
+    addCorner(guide, 8)
+    addStroke(guide, COLORS.BorderSoft, 0.15, 1)
+    local guideIcon = makeIcon(guide, ICONS.Shield, 18, COLORS.Green)
+    guideIcon.Position = UDim2.fromOffset(14, 15)
+    local guideTitle = makeLabel(guide, "Replica-safe checkout", 12, COLORS.Text, FONT_SEMIBOLD)
+    guideTitle.Position = UDim2.fromOffset(43, 10)
+    guideTitle.Size = UDim2.new(1, -56, 0, 22)
+    local guideText = makeLabel(guide, "Prices, stock, and the active shop key come from the current ShopData replica. Purchases are clamped to available Gold and stock.", 11, COLORS.TextMuted, FONT_MEDIUM)
+    guideText.Position = UDim2.fromOffset(14, 42)
+    guideText.Size = UDim2.new(1, -28, 0, 58)
+    guideText.TextWrapped = true
+    guideText.TextYAlignment = Enum.TextYAlignment.Top
+
+    local _, checkoutBody = createPanel(shopView, UDim2.new(0.58, 7, 0, 0), UDim2.new(0.42, -7, 1, 0), "Checkout", "Exact purchase total", ICONS.Shop, COLORS.Green)
+    local balanceLabel = makeLabel(checkoutBody, "0 Gold available", 13, COLORS.Amber, FONT_BOLD)
+    balanceLabel.Size = UDim2.new(1, 0, 0, 22)
+    UIModule._ShopBalanceLabel = balanceLabel
+    local detailLabel = makeLabel(checkoutBody, "Choose an item from the live Gold Shop replica.", 10, COLORS.TextMuted, FONT_MEDIUM)
+    detailLabel.Position = UDim2.fromOffset(0, 28)
+    detailLabel.Size = UDim2.new(1, 0, 0, 42)
+    detailLabel.TextWrapped = true
+    detailLabel.TextYAlignment = Enum.TextYAlignment.Top
+    UIModule._ShopDetailLabel = detailLabel
+
+    local amountCaption = makeLabel(checkoutBody, "PURCHASE AMOUNT", 9, COLORS.TextDim, FONT_BOLD)
+    amountCaption.Position = UDim2.fromOffset(0, 84)
+    amountCaption.Size = UDim2.new(1, -72, 0, 16)
+    local amountLabel = makeLabel(checkoutBody, "1 / 1", 10, COLORS.Accent, FONT_BOLD, Enum.TextXAlignment.Right)
+    amountLabel.Position = UDim2.new(1, -70, 0, 84)
+    amountLabel.Size = UDim2.fromOffset(70, 16)
+    UIModule._ShopAmountLabel = amountLabel
+
+    local amountTrack = create("TextButton", {
+        Position = UDim2.fromOffset(0, 106), Size = UDim2.new(1, 0, 0, 24),
+        BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+    }, checkoutBody)
+    local amountRail = create("Frame", {
+        Position = UDim2.new(0, 0, 0.5, -2), Size = UDim2.new(1, 0, 0, 4),
+        BackgroundColor3 = COLORS.SurfaceRaised, BorderSizePixel = 0,
+    }, amountTrack)
+    addCorner(amountRail, 3)
+    local amountFill = create("Frame", { Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = COLORS.Accent, BorderSizePixel = 0 }, amountRail)
+    addCorner(amountFill, 3)
+    UIModule._ShopAmountFill = amountFill
+
+    local dragging = false
+    local function setAmountFromX(x)
+        local item = findSelectedShopItem()
+        local maximum = item and math.max(1, tonumber(item.MaxAmount) or 1) or 1
+        local ratio = math.clamp((x - amountTrack.AbsolutePosition.X) / math.max(1, amountTrack.AbsoluteSize.X), 0, 1)
+        UIModule.ShopAmount = maximum > 1 and (1 + math.floor(ratio * (maximum - 1) + 0.5)) or 1
+        refreshShopControls()
+    end
+    amountTrack.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            setAmountFromX(input.Position.X)
+        end
+    end)
+    table.insert(UIModule.Connections, UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            setAmountFromX(input.Position.X)
+        end
+    end))
+    table.insert(UIModule.Connections, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+    end))
+
+    local purchaseButton, purchaseLabel = createActionButton(checkoutBody, "Purchase", ICONS.Shop, COLORS.Accent)
+    purchaseButton.Position = UDim2.new(0, 0, 1, -42)
+    UIModule._ShopPurchaseLabel = purchaseLabel
+    purchaseButton.Activated:Connect(function()
+        local item = findSelectedShopItem()
+        if not item then UIModule:AppendLog("Select a Gold Shop item first."); return end
+        local callback = UIModule.Callbacks.OnShopPurchase
+        if not callback then return end
+        purchaseButton.Active = false
+        task.spawn(function()
+            local ok, accepted, message = pcall(callback, item.Index, UIModule.ShopAmount)
+            if not ok then UIModule:AppendLog("Purchase failed: " .. tostring(accepted))
+            elseif accepted == false and message then UIModule:AppendLog(tostring(message)) end
+            purchaseButton.Active = true
+        end)
+    end)
+end
+
 local function buildMacroTab(viewHost)
     local macroView = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false }, viewHost)
     tabViews.Macro = macroView
@@ -1772,16 +2040,63 @@ local function buildMacroTab(viewHost)
         return box
     end
 
+    local profileSelector = create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 36), BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0,
+        AutoButtonColor = false, Text = "", ZIndex = 18,
+    }, profilesBody)
+    addCorner(profileSelector, 8)
+    local profileSelectorStroke = addStroke(profileSelector, COLORS.BorderSoft, 0.15, 1)
+    bindHover(profileSelector, COLORS.Sidebar, COLORS.SurfaceHover, profileSelectorStroke, COLORS.BorderSoft, COLORS.Accent)
+    local profileSelectorIcon = makeIcon(profileSelector, ICONS.Macro, 13, COLORS.Accent)
+    profileSelectorIcon.Position = UDim2.fromOffset(10, 11)
+    profileSelectorIcon.ZIndex = 19
+    local profileSelectorLabel = makeLabel(profileSelector, "Select profile...", 11, COLORS.Text, FONT_SEMIBOLD)
+    profileSelectorLabel.Position = UDim2.fromOffset(31, 0)
+    profileSelectorLabel.Size = UDim2.new(1, -61, 1, 0)
+    profileSelectorLabel.ZIndex = 19
+    UIModule._MacroProfileSelectorLabel = profileSelectorLabel
+    local profileArrow = makeLabel(profileSelector, "⌄", 16, COLORS.TextMuted, FONT_BOLD, Enum.TextXAlignment.Center)
+    profileArrow.Position = UDim2.new(1, -28, 0, 0)
+    profileArrow.Size = UDim2.fromOffset(22, 36)
+    profileArrow.ZIndex = 19
+
     local profileList = createScroll(profilesBody)
     profileList.Name = "MacroProfileBrowser"
-    profileList.Size = UDim2.new(1, 0, 0, 126)
+    profileList.Position = UDim2.fromOffset(0, 40)
+    profileList.Size = UDim2.new(1, 0, 0, 0)
+    profileList.BackgroundColor3 = COLORS.SurfaceRaised
+    profileList.BackgroundTransparency = 0
     profileList.ScrollBarImageColor3 = COLORS.Accent
+    profileList.ClipsDescendants = true
+    profileList.Visible = false
+    profileList.ZIndex = 20
+    addCorner(profileList, 8)
+    addStroke(profileList, COLORS.Border, 0.1, 1)
     UIModule._MacroProfileList = profileList
 
-    local macroNameInput = makeInput(profilesBody, "Macro name", UDim2.fromOffset(0, 134), UDim2.new(1, 0, 0, 34), false)
+    local profileDropdownOpen = false
+    local function setProfileDropdown(open)
+        profileDropdownOpen = open == true
+        if profileDropdownOpen then
+            profileList.Visible = true
+            TweenService:Create(profileList, TWEEN_NORMAL, { Size = UDim2.new(1, 0, 0, 154) }):Play()
+            profileArrow.Text = "⌃"
+        else
+            UIModule._MacroProfileScrollPosition = profileList.CanvasPosition
+            TweenService:Create(profileList, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, 0) }):Play()
+            profileArrow.Text = "⌄"
+            task.delay(TWEEN_FAST.Time, function()
+                if not profileDropdownOpen then profileList.Visible = false end
+            end)
+        end
+    end
+    UIModule._SetMacroProfileDropdown = setProfileDropdown
+    profileSelector.Activated:Connect(function() setProfileDropdown(not profileDropdownOpen) end)
+
+    local macroNameInput = makeInput(profilesBody, "Macro name", UDim2.fromOffset(0, 44), UDim2.new(1, 0, 0, 34), false)
     UIModule.MacroNameInput = macroNameInput
 
-    local profileButtons = create("Frame", { Position = UDim2.fromOffset(0, 176), Size = UDim2.new(1, 0, 0, 72), BackgroundTransparency = 1 }, profilesBody)
+    local profileButtons = create("Frame", { Position = UDim2.fromOffset(0, 86), Size = UDim2.new(1, 0, 0, 72), BackgroundTransparency = 1 }, profilesBody)
     create("UIGridLayout", { CellSize = UDim2.new(0.5, -4, 0, 32), CellPadding = UDim2.fromOffset(8, 6), SortOrder = Enum.SortOrder.LayoutOrder }, profileButtons)
 
     local function profileButton(text, icon, color, order, callbackName)
@@ -1814,10 +2129,10 @@ local function buildMacroTab(viewHost)
     profileButton("Refresh", ICONS.Settings, COLORS.TextMuted, 4, "OnMacroRefresh")
 
     local importCaption = makeLabel(profilesBody, "IMPORT CONFIG", 11, COLORS.TextDim, FONT_BOLD)
-    importCaption.Position = UDim2.fromOffset(0, 256)
+    importCaption.Position = UDim2.fromOffset(0, 166)
     importCaption.Size = UDim2.new(1, 0, 0, 14)
 
-    local importInput = makeInput(profilesBody, '{"steps":[...]} or paste raw config', UDim2.fromOffset(0, 274), UDim2.new(1, 0, 1, -320), true)
+    local importInput = makeInput(profilesBody, '{"steps":[...]} or paste raw config', UDim2.fromOffset(0, 184), UDim2.new(1, 0, 1, -230), true)
     UIModule.MacroImportInput = importInput
 
     local importButton = createActionButton(profilesBody, "Import Macro", ICONS.Upload, COLORS.Accent)
@@ -1840,6 +2155,7 @@ local viewHost = buildHeaderAndHost()
 buildEvolveTab(viewHost)
 buildSellTab(viewHost)
 buildTeamTab(viewHost)
+buildShopTab(viewHost)
 buildMacroTab(viewHost)
 
 -- Main Hotkey Listener
