@@ -27,6 +27,11 @@ local ICONS = {
     Flask = "rbxassetid://115528123394259", Terminal = "rbxassetid://102379915564176",
     Shield = "rbxassetid://71867984579031", Ghost = "rbxassetid://132705178126217",
     Check = "rbxassetid://86817768619372", Wand = "rbxassetid://115623066336607",
+    User = "rbxassetid://114567720540659",
+    Macro = "rbxassetid://117978552190904", Record = "rbxassetid://122878673716704",
+    Play = "rbxassetid://76386816441302", Save = "rbxassetid://122894934359450",
+    Clipboard = "rbxassetid://85387882337161", Upload = "rbxassetid://118488857289315",
+    Plus = "rbxassetid://101123124881873", Clock = "rbxassetid://136533241128438",
 }
 
 local RARITY_COLORS = {
@@ -130,18 +135,24 @@ local mainFrame = create("CanvasGroup", {
 addCorner(mainFrame, 18)
 addStroke(mainFrame, COLORS.Border, 0.08, 1)
 local uiScale = create("UIScale", { Scale = 1 }, mainFrame)
+local shadowScale = create("UIScale", { Scale = 1 }, mainShadow)
 
 local function updateResponsiveScale()
     local camera = Workspace.CurrentCamera
     if not camera then return end
     local viewport = camera.ViewportSize
-    uiScale.Scale = math.clamp(math.min((viewport.X - 32) / 900, (viewport.Y - 32) / 560), 0.68, 1)
+    local scale = math.clamp(math.min((viewport.X - 32) / 900, (viewport.Y - 32) / 560), 0.68, 1)
+    uiScale.Scale, shadowScale.Scale = scale, scale
 end
-updateResponsiveScale()
-if Workspace.CurrentCamera then
-    table.insert(UIModule.Connections, Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale))
+local cameraViewportConnection
+local function bindCurrentCamera()
+    if cameraViewportConnection then cameraViewportConnection:Disconnect() end
+    local camera = Workspace.CurrentCamera
+    cameraViewportConnection = camera and camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale) or nil
+    updateResponsiveScale()
 end
-table.insert(UIModule.Connections, Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(updateResponsiveScale))
+bindCurrentCamera()
+table.insert(UIModule.Connections, Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(bindCurrentCamera))
 
 local sidebar = create("Frame", { Size = UDim2.new(0, 204, 1, 0), BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0 }, mainFrame)
 create("Frame", { Position = UDim2.new(1, -1, 0, 0), Size = UDim2.new(0, 1, 1, 0), BackgroundColor3 = COLORS.BorderSoft, BorderSizePixel = 0 }, sidebar)
@@ -185,6 +196,8 @@ end
 local evolveTab = createNavButton("Evolve", "Evolution Lab", "Craft & evolve", ICONS.Sparkles, 1)
 local sellTab = createNavButton("Sell", "Unit Cleaner", "Filter & protect", ICONS.Cleaner, 2)
 local teamTab = createNavButton("Team", "Automation", "Runtime options", ICONS.Settings, 3)
+local macroTab = createNavButton("Macro", "Macro Studio", "Record & replay", ICONS.Macro, 4)
+navContainer.Size = UDim2.new(1, -24, 0, 198)
 
 local safetyCard = create("Frame", { Position = UDim2.new(0, 12, 1, -142), Size = UDim2.new(1, -24, 0, 72), BackgroundColor3 = COLORS.Surface, BorderSizePixel = 0 }, sidebar)
 addCorner(safetyCard, 11); addStroke(safetyCard, COLORS.BorderSoft, 0.15, 1)
@@ -201,13 +214,16 @@ addCorner(safetyLine, 3)
 local safetyFill = create("Frame", { Size = UDim2.new(0.78, 0, 1, 0), BackgroundColor3 = COLORS.Green, BorderSizePixel = 0 }, safetyLine)
 addCorner(safetyFill, 3)
 
-local unloadButton = create("TextButton", { Position = UDim2.new(0, 12, 1, -56), Size = UDim2.new(1, -24, 0, 40), BackgroundColor3 = COLORS.Surface, BorderSizePixel = 0, AutoButtonColor = false, Text = "" }, sidebar)
-addCorner(unloadButton, 10)
-local unloadStroke = addStroke(unloadButton, COLORS.BorderSoft, 0.1, 1)
-local unloadIcon = makeIcon(unloadButton, ICONS.Close, 15, COLORS.Red); unloadIcon.Position = UDim2.fromOffset(13, 12)
-local unloadLabel = makeLabel(unloadButton, "Unload runtime", 12, COLORS.TextMuted, FONT_SEMIBOLD)
-unloadLabel.Position, unloadLabel.Size = UDim2.fromOffset(38, 0), UDim2.new(1, -48, 1, 0)
-bindHover(unloadButton, COLORS.Surface, COLORS.SurfaceHover, unloadStroke, COLORS.BorderSoft, COLORS.Red)
+local accountCard = create("Frame", { Position = UDim2.new(0, 12, 1, -58), Size = UDim2.new(1, -24, 0, 42), BackgroundColor3 = COLORS.Surface, BorderSizePixel = 0 }, sidebar)
+addCorner(accountCard, 10); addStroke(accountCard, COLORS.BorderSoft, 0.1, 1)
+local accountIconBack = create("Frame", { Position = UDim2.fromOffset(7, 7), Size = UDim2.fromOffset(28, 28), BackgroundColor3 = COLORS.Violet, BackgroundTransparency = 0.82, BorderSizePixel = 0 }, accountCard)
+addCorner(accountIconBack, 8)
+local accountIcon = makeIcon(accountIconBack, ICONS.User, 15, COLORS.VioletBright)
+accountIcon.AnchorPoint, accountIcon.Position = Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5)
+local accountName = makeLabel(accountCard, tostring(LocalPlayer.DisplayName), 11, COLORS.Text, FONT_SEMIBOLD)
+accountName.Position, accountName.Size = UDim2.fromOffset(43, 4), UDim2.new(1, -50, 0, 19)
+local accountId = makeLabel(accountCard, "@" .. tostring(LocalPlayer.Name), 9, COLORS.TextDim, FONT_MEDIUM)
+accountId.Position, accountId.Size = UDim2.fromOffset(43, 21), UDim2.new(1, -50, 0, 16)
 
 local content = create("Frame", { Position = UDim2.fromOffset(204, 0), Size = UDim2.new(1, -204, 1, 0), BackgroundTransparency = 1 }, mainFrame)
 local header = create("Frame", { Size = UDim2.new(1, 0, 0, 78), BackgroundTransparency = 1 }, content)
@@ -258,8 +274,8 @@ local function createActionButton(parent, text, iconAsset, color)
     local button = create("TextButton", { Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = color, BorderSizePixel = 0, AutoButtonColor = false, Text = "" }, parent)
     addCorner(button, 10)
     create("UIGradient", { Color = ColorSequence.new(color:Lerp(COLORS.White, 0.12), color:Lerp(COLORS.Black, 0.08)), Rotation = 12 }, button)
-    local icon = makeIcon(button, iconAsset, 16, COLORS.White); icon.Position = UDim2.new(0.5, -84, 0.5, -8)
-    local label = makeLabel(button, text, 12, COLORS.White, FONT_BOLD, Enum.TextXAlignment.Center); label.Size = UDim2.fromScale(1, 1)
+    local icon = makeIcon(button, iconAsset, 16, COLORS.White); icon.Position = UDim2.fromOffset(14, 13)
+    local label = makeLabel(button, text, 12, COLORS.White, FONT_BOLD, Enum.TextXAlignment.Center); label.Position, label.Size = UDim2.fromOffset(36, 0), UDim2.new(1, -50, 1, 0)
     bindHover(button, color, color:Lerp(COLORS.White, 0.08))
     return button, label
 end
@@ -343,18 +359,212 @@ table.insert(UIModule.Connections, teamLayout:GetPropertyChangedSignal("Absolute
     teamCard.CanvasSize = UDim2.fromOffset(0, teamLayout.AbsoluteContentSize.Y + 4)
 end))
 
+-- Macro Studio workspace.
+local macroView = create("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Visible = false }, viewHost)
+local macroLeft = create("Frame", { Size = UDim2.new(0.54, -7, 1, 0), BackgroundTransparency = 1 }, macroView)
+local macroRight = create("Frame", { Position = UDim2.new(0.54, 7, 0, 0), Size = UDim2.new(0.46, -7, 1, 0), BackgroundTransparency = 1 }, macroView)
+
+local _, macroStatusBody = createPanel(macroLeft, UDim2.fromOffset(0, 0), UDim2.new(1, 0, 0, 220), "Macro status", "Server-synchronized recorder", ICONS.Record, COLORS.Red)
+local statusGrid = create("Frame", { Size = UDim2.new(1, 0, 0, 91), BackgroundTransparency = 1 }, macroStatusBody)
+create("UIGridLayout", { CellSize = UDim2.new(0.5, -4, 0, 42), CellPadding = UDim2.fromOffset(8, 7), SortOrder = Enum.SortOrder.LayoutOrder }, statusGrid)
+local macroStatusValues = {}
+for order, item in ipairs({
+    { "Status", "Idle" }, { "Action", "None" }, { "Type", "None" }, { "Unit", "—" },
+}) do
+    local card = create("Frame", { BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0, LayoutOrder = order }, statusGrid)
+    addCorner(card, 9); addStroke(card, COLORS.BorderSoft, 0.25, 1)
+    local caption = makeLabel(card, string.upper(item[1]), 9, COLORS.TextDim, FONT_BOLD)
+    caption.Position, caption.Size = UDim2.fromOffset(10, 3), UDim2.new(1, -20, 0, 13)
+    local value = makeLabel(card, item[2], 11, order == 1 and COLORS.Green or COLORS.Text, FONT_SEMIBOLD)
+    value.Position, value.Size = UDim2.fromOffset(10, 17), UDim2.new(1, -20, 0, 20)
+    macroStatusValues[item[1]] = value
+end
+local waitingPill = create("Frame", { Position = UDim2.new(0, 0, 1, -32), Size = UDim2.new(1, 0, 0, 30), BackgroundColor3 = COLORS.Amber, BackgroundTransparency = 0.9, BorderSizePixel = 0 }, macroStatusBody)
+addCorner(waitingPill, 9); addStroke(waitingPill, COLORS.Amber, 0.65, 1)
+local waitingIcon = makeIcon(waitingPill, ICONS.Clock, 14, COLORS.Amber); waitingIcon.Position = UDim2.fromOffset(10, 8)
+local waitingLabel = makeLabel(waitingPill, "Waiting for: Idle", 10, COLORS.Amber, FONT_SEMIBOLD)
+waitingLabel.Position, waitingLabel.Size = UDim2.fromOffset(31, 0), UDim2.new(1, -39, 1, 0)
+
+local _, macroControlsBody = createPanel(macroLeft, UDim2.fromOffset(0, 232), UDim2.new(1, 0, 1, -232), "Playback controls", "Record and replay safely", ICONS.Play, COLORS.Violet)
+local macroToggleRow = create("Frame", { Size = UDim2.new(1, 0, 0, 44), BackgroundTransparency = 1 }, macroControlsBody)
+
+local function makeMacroToggle(parent, title, iconAsset, position, accent, callbackName)
+    local active = false
+    local button = create("TextButton", { Position = position, Size = UDim2.new(0.5, -4, 0, 42), BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0, AutoButtonColor = false, Text = "" }, parent)
+    addCorner(button, 10)
+    local stroke = addStroke(button, COLORS.BorderSoft, 0.2, 1)
+    local icon = makeIcon(button, iconAsset, 15, COLORS.TextMuted); icon.Position = UDim2.fromOffset(12, 13)
+    local label = makeLabel(button, title, 11, COLORS.TextMuted, FONT_SEMIBOLD); label.Position, label.Size = UDim2.fromOffset(35, 0), UDim2.new(1, -43, 1, 0)
+    local function setState(value, silent)
+        active = value == true
+        button.BackgroundColor3 = active and accent:Lerp(COLORS.Canvas, 0.72) or COLORS.Sidebar
+        stroke.Color, stroke.Transparency = active and accent or COLORS.BorderSoft, active and 0.25 or 0.2
+        icon.ImageColor3, label.TextColor3 = active and accent or COLORS.TextMuted, active and COLORS.Text or COLORS.TextMuted
+        if not silent then
+            local callback = UIModule.Callbacks[callbackName]
+            if callback then
+                local ok, accepted, message = pcall(callback, active, UIModule.MacroNameInput and UIModule.MacroNameInput.Text or "")
+                if not ok or accepted == false then
+                    active = false
+                    button.BackgroundColor3, stroke.Color, stroke.Transparency = COLORS.Sidebar, COLORS.BorderSoft, 0.2
+                    icon.ImageColor3, label.TextColor3 = COLORS.TextMuted, COLORS.TextMuted
+                    UIModule:AppendLog("Macro control rejected: " .. tostring(message or accepted))
+                end
+            end
+        end
+    end
+    button.Activated:Connect(function() setState(not active, false) end)
+    return setState
+end
+
+local setRecordToggle = makeMacroToggle(macroToggleRow, "Record Macro", ICONS.Record, UDim2.fromOffset(0, 0), COLORS.Red, "OnMacroRecordToggle")
+local setPlayToggle = makeMacroToggle(macroToggleRow, "Play Macro", ICONS.Play, UDim2.new(0.5, 4, 0, 0), COLORS.Green, "OnMacroPlayToggle")
+
+local delayCaption = makeLabel(macroControlsBody, "STEP DELAY", 9, COLORS.TextDim, FONT_BOLD)
+delayCaption.Position, delayCaption.Size = UDim2.fromOffset(0, 58), UDim2.new(1, -66, 0, 16)
+local delayValue = makeLabel(macroControlsBody, "0.20s", 10, COLORS.Cyan, FONT_BOLD, Enum.TextXAlignment.Right)
+delayValue.Position, delayValue.Size = UDim2.new(1, -62, 0, 58), UDim2.fromOffset(62, 16)
+local delayTrack = create("TextButton", { Position = UDim2.fromOffset(0, 80), Size = UDim2.new(1, 0, 0, 16), BackgroundTransparency = 1, Text = "", AutoButtonColor = false }, macroControlsBody)
+local delayRail = create("Frame", { Position = UDim2.new(0, 0, 0.5, -3), Size = UDim2.new(1, 0, 0, 6), BackgroundColor3 = COLORS.SurfaceRaised, BorderSizePixel = 0 }, delayTrack); addCorner(delayRail, 6)
+local delayFill = create("Frame", { Size = UDim2.new((0.2 - 0.05) / 0.95, 0, 1, 0), BackgroundColor3 = COLORS.Cyan, BorderSizePixel = 0 }, delayRail); addCorner(delayFill, 6)
+local delayKnob = create("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new((0.2 - 0.05) / 0.95, 0, 0.5, 0), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = COLORS.White, BorderSizePixel = 0 }, delayRail); addCorner(delayKnob, 7); addStroke(delayKnob, COLORS.Cyan, 0.15, 2)
+local draggingDelay = false
+local function setDelayFromX(x)
+    local ratio = math.clamp((x - delayTrack.AbsolutePosition.X) / math.max(1, delayTrack.AbsoluteSize.X), 0, 1)
+    local value = math.floor((0.05 + ratio * 0.95) * 20 + 0.5) / 20
+    local renderedRatio = (value - 0.05) / 0.95
+    delayFill.Size, delayKnob.Position = UDim2.new(renderedRatio, 0, 1, 0), UDim2.new(renderedRatio, 0, 0.5, 0)
+    delayValue.Text = string.format("%.2fs", value)
+    if UIModule.Callbacks.OnMacroStepDelay then UIModule.Callbacks.OnMacroStepDelay(value) end
+end
+delayTrack.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingDelay = true; setDelayFromX(input.Position.X) end
+end)
+table.insert(UIModule.Connections, UserInputService.InputChanged:Connect(function(input)
+    if draggingDelay and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then setDelayFromX(input.Position.X) end
+end))
+table.insert(UIModule.Connections, UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then draggingDelay = false end
+end))
+
+local playModes = { "Money, Time", "Strict Time", "Smart Hybrid" }
+local playModeIndex = 3
+local modeButton = create("TextButton", { Position = UDim2.fromOffset(0, 99), Size = UDim2.new(1, 0, 0, 32), BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0, AutoButtonColor = false, Text = "" }, macroControlsBody)
+addCorner(modeButton, 10); addStroke(modeButton, COLORS.BorderSoft, 0.2, 1)
+local modeCaption = makeLabel(modeButton, "PLAY MODE", 9, COLORS.TextDim, FONT_BOLD); modeCaption.Position, modeCaption.Size = UDim2.fromOffset(11, 3), UDim2.new(0.45, 0, 0, 16)
+local modeValue = makeLabel(modeButton, playModes[playModeIndex], 11, COLORS.VioletBright, FONT_SEMIBOLD, Enum.TextXAlignment.Right); modeValue.Position, modeValue.Size = UDim2.new(0.42, 0, 0, 0), UDim2.new(0.58, -11, 1, 0)
+modeButton.Activated:Connect(function()
+    playModeIndex = playModeIndex % #playModes + 1
+    modeValue.Text = playModes[playModeIndex]
+    if UIModule.Callbacks.OnMacroPlayMode then UIModule.Callbacks.OnMacroPlayMode(playModes[playModeIndex]) end
+end)
+local macroWarning = makeLabel(macroControlsBody, "Warning: Mobile/Slow Device may affect Macro Speed", 9, COLORS.Red, FONT_SEMIBOLD, Enum.TextXAlignment.Center)
+macroWarning.Position, macroWarning.Size = UDim2.new(0, 0, 1, -22), UDim2.new(1, 0, 0, 18)
+
+local _, profilesBody, _, profilesSubtitle = createPanel(macroRight, UDim2.fromOffset(0, 0), UDim2.fromScale(1, 1), "Macro profiles", "No profile selected", ICONS.Macro, COLORS.Blue)
+local function makeInput(parent, placeholder, position, size, multiline)
+    local box = create("TextBox", {
+        Position = position, Size = size, BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0,
+        ClearTextOnFocus = false, PlaceholderText = placeholder, PlaceholderColor3 = COLORS.TextDim,
+        Text = "", TextColor3 = COLORS.Text, TextSize = 11, FontFace = multiline and FONT_MONO or FONT_MEDIUM,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
+        TextWrapped = multiline == true, MultiLine = multiline == true,
+    }, parent)
+    addCorner(box, 9); addStroke(box, COLORS.BorderSoft, 0.15, 1)
+    create("UIPadding", { PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11), PaddingTop = UDim.new(0, multiline and 8 or 0), PaddingBottom = UDim.new(0, multiline and 8 or 0) }, box)
+    return box
+end
+
+local profileSelector = create("TextButton", { Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = COLORS.SurfaceRaised, BorderSizePixel = 0, AutoButtonColor = false, Text = "" }, profilesBody)
+addCorner(profileSelector, 9); addStroke(profileSelector, COLORS.Blue, 0.6, 1)
+local profileSelectorLabel = makeLabel(profileSelector, "Select profile...", 11, COLORS.TextMuted, FONT_SEMIBOLD); profileSelectorLabel.Position, profileSelectorLabel.Size = UDim2.fromOffset(11, 0), UDim2.new(1, -22, 1, 0)
+local macroNameInput = makeInput(profilesBody, "Macro name", UDim2.fromOffset(0, 48), UDim2.new(1, 0, 0, 38), false)
+UIModule.MacroNameInput = macroNameInput
+local profileButtons = create("Frame", { Position = UDim2.fromOffset(0, 96), Size = UDim2.new(1, 0, 0, 78), BackgroundTransparency = 1 }, profilesBody)
+create("UIGridLayout", { CellSize = UDim2.new(0.5, -4, 0, 35), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder }, profileButtons)
+local function profileButton(text, icon, color, order, callbackName)
+    local button = create("TextButton", { BackgroundColor3 = COLORS.Sidebar, BorderSizePixel = 0, AutoButtonColor = false, Text = "", LayoutOrder = order }, profileButtons)
+    addCorner(button, 9); local stroke = addStroke(button, COLORS.BorderSoft, 0.2, 1)
+    local image = makeIcon(button, icon, 13, color); image.Position = UDim2.fromOffset(9, 11)
+    local label = makeLabel(button, text, 9, COLORS.TextMuted, FONT_SEMIBOLD); label.Position, label.Size = UDim2.fromOffset(28, 0), UDim2.new(1, -34, 1, 0)
+    bindHover(button, COLORS.Sidebar, COLORS.SurfaceHover, stroke, COLORS.BorderSoft, color)
+    button.Activated:Connect(function()
+        local callback = UIModule.Callbacks[callbackName]
+        if callback then callback(macroNameInput.Text) end
+    end)
+    return button
+end
+profileButton("Create", ICONS.Plus, COLORS.Green, 1, "OnMacroCreate")
+profileButton("Delete", ICONS.Cleaner, COLORS.Red, 2, "OnMacroDelete")
+profileButton("Export", ICONS.Clipboard, COLORS.Cyan, 3, "OnMacroExport")
+profileButton("Refresh", ICONS.Settings, COLORS.Blue, 4, "OnMacroRefresh")
+
+local importCaption = makeLabel(profilesBody, "IMPORT CONFIG", 9, COLORS.TextDim, FONT_BOLD)
+importCaption.Position, importCaption.Size = UDim2.fromOffset(0, 185), UDim2.new(1, 0, 0, 16)
+local importInput = makeInput(profilesBody, "{\"steps\":[...]} or a https:// link", UDim2.fromOffset(0, 207), UDim2.new(1, 0, 1, -255), true)
+UIModule.MacroImportInput = importInput
+local importButton = createActionButton(profilesBody, "Import Macro", ICONS.Upload, COLORS.Blue)
+importButton.Position = UDim2.new(0, 0, 1, -40)
+importButton.Size = UDim2.new(1, 0, 0, 38)
+
+UIModule.MacroProfiles = {}
+UIModule.SelectedMacroProfile = nil
+profileSelector.Activated:Connect(function()
+    if #UIModule.MacroProfiles == 0 then return end
+    local currentIndex = table.find(UIModule.MacroProfiles, UIModule.SelectedMacroProfile) or 0
+    currentIndex = currentIndex % #UIModule.MacroProfiles + 1
+    UIModule.SelectedMacroProfile = UIModule.MacroProfiles[currentIndex]
+    macroNameInput.Text = UIModule.SelectedMacroProfile
+    profileSelectorLabel.Text = UIModule.SelectedMacroProfile
+    profilesSubtitle.Text = string.format("%d profile(s) · selected %s", #UIModule.MacroProfiles, UIModule.SelectedMacroProfile)
+    if UIModule.Callbacks.OnMacroSelect then UIModule.Callbacks.OnMacroSelect(UIModule.SelectedMacroProfile) end
+end)
+importButton.Activated:Connect(function()
+    if UIModule.Callbacks.OnMacroImport then UIModule.Callbacks.OnMacroImport(importInput.Text, macroNameInput.Text) end
+end)
+
+UIModule._SetRecordToggle = setRecordToggle
+UIModule._SetPlayToggle = setPlayToggle
+UIModule._MacroStatusValues = macroStatusValues
+UIModule._MacroWaitingLabel = waitingLabel
+UIModule._MacroProfileSelectorLabel = profileSelectorLabel
+UIModule._MacroProfilesSubtitle = profilesSubtitle
+
 local pageMeta = {
     Evolve = { Title = "Evolution Lab", Subtitle = "Plan materials and evolve your strongest unit safely." },
     Sell = { Title = "Unit Cleaner", Subtitle = "Review inventory, apply rarity filters, and sell with safeguards." },
     Team = { Title = "Automation", Subtitle = "Control the runtime modules used by the current session." },
+    Macro = { Title = "Macro Studio", Subtitle = "Record confirmed actions, manage profiles, and replay with server time." },
 }
 
+local evoBusy, sellBusy = false, false
 local function refreshSelectionLabels()
     local evoCount = countSelected(UIModule.SelectedEvoUnits)
-    evoActionLabel.Text = evoCount > 0 and string.format("Craft & evolve selected (%d)", evoCount) or "Craft & evolve ready units"
+    evoActionLabel.Text = evoBusy and "Processing evolution plan..."
+        or (evoCount > 0 and string.format("Craft & evolve selected (%d)", evoCount) or "Craft & evolve ready units")
     local sellCount = countSelected(UIModule.SelectedSellUnits)
     selectedCountLabel.Text = tostring(sellCount)
-    sellActionLabel.Text = string.format("Sell selected (%d)", sellCount)
+    sellActionLabel.Text = sellBusy and "Waiting for inventory confirmation..." or string.format("Sell selected (%d)", sellCount)
+end
+
+local refreshRunning, refreshPending = false, false
+local function requestRefresh()
+    if refreshRunning then
+        refreshPending = true
+        return
+    end
+    refreshRunning = true
+    task.spawn(function()
+        repeat
+            refreshPending = false
+            local callback = UIModule.Callbacks.OnRefresh
+            if callback then
+                local ok, err = pcall(callback)
+                if not ok then warn("[UI] Refresh failed: " .. tostring(err)) end
+            end
+        until not refreshPending
+        refreshRunning = false
+    end)
 end
 
 function UIModule:SetState(open)
@@ -365,7 +575,7 @@ function UIModule:SetState(open)
         mainShadow.BackgroundTransparency = 1
         TweenService:Create(mainFrame, TWEEN_NORMAL, { Size = UDim2.fromOffset(900, 560), GroupTransparency = 0 }):Play()
         TweenService:Create(mainShadow, TWEEN_NORMAL, { BackgroundTransparency = 0.44 }):Play()
-        if self.Callbacks.OnRefresh then task.spawn(self.Callbacks.OnRefresh) end
+        requestRefresh()
     else
         TweenService:Create(mainFrame, TWEEN_FAST, { GroupTransparency = 1 }):Play()
         TweenService:Create(mainShadow, TWEEN_FAST, { BackgroundTransparency = 1 }):Play()
@@ -388,15 +598,15 @@ function UIModule:SwitchTab(tabName)
         TweenService:Create(tab.Icon, TWEEN_FAST, { ImageColor3 = active and COLORS.VioletBright or COLORS.TextMuted }):Play()
         TweenService:Create(tab.Title, TWEEN_FAST, { TextColor3 = active and COLORS.Text or COLORS.TextMuted }):Play()
     end
-    evolveView.Visible, sellView.Visible, teamView.Visible = tabName == "Evolve", tabName == "Sell", tabName == "Team"
-    if self.Callbacks.OnRefresh then task.spawn(self.Callbacks.OnRefresh) end
+    evolveView.Visible, sellView.Visible, teamView.Visible, macroView.Visible = tabName == "Evolve", tabName == "Sell", tabName == "Team", tabName == "Macro"
+    requestRefresh()
 end
 
 evolveTab.Activated:Connect(function() UIModule:SwitchTab("Evolve") end)
 sellTab.Activated:Connect(function() UIModule:SwitchTab("Sell") end)
 teamTab.Activated:Connect(function() UIModule:SwitchTab("Team") end)
+macroTab.Activated:Connect(function() UIModule:SwitchTab("Macro") end)
 closeButton.Activated:Connect(function() UIModule:SetState(false) end)
-unloadButton.Activated:Connect(function() if UIModule.Callbacks.OnUnload then UIModule.Callbacks.OnUnload() end end)
 
 local dragging, dragStart, windowStart = false, Vector2.zero, UDim2.fromScale(0.5, 0.5)
 table.insert(UIModule.Connections, header.InputBegan:Connect(function(input)
@@ -410,7 +620,20 @@ end))
 table.insert(UIModule.Connections, UserInputService.InputChanged:Connect(function(input)
     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
-        mainFrame.Position = UDim2.new(windowStart.X.Scale, windowStart.X.Offset + delta.X, windowStart.Y.Scale, windowStart.Y.Offset + delta.Y)
+        local camera = Workspace.CurrentCamera
+        if not camera then return end
+        local viewport, scale = camera.ViewportSize, uiScale.Scale
+        local halfWidth, halfHeight = 450 * scale, 280 * scale
+        local absoluteX = viewport.X * windowStart.X.Scale + windowStart.X.Offset + delta.X
+        local absoluteY = viewport.Y * windowStart.Y.Scale + windowStart.Y.Offset + delta.Y
+        local minX, maxX = halfWidth + 8, viewport.X - halfWidth - 8
+        local minY, maxY = halfHeight + 8, viewport.Y - halfHeight - 8
+        local clampedX = minX <= maxX and math.clamp(absoluteX, minX, maxX) or viewport.X * 0.5
+        local clampedY = minY <= maxY and math.clamp(absoluteY, minY, maxY) or viewport.Y * 0.5
+        mainFrame.Position = UDim2.new(
+            windowStart.X.Scale, clampedX - viewport.X * windowStart.X.Scale,
+            windowStart.Y.Scale, clampedY - viewport.Y * windowStart.Y.Scale
+        )
         mainShadow.Position = UDim2.new(mainFrame.Position.X.Scale, mainFrame.Position.X.Offset, mainFrame.Position.Y.Scale, mainFrame.Position.Y.Offset + 8)
     end
 end))
@@ -421,6 +644,48 @@ function UIModule:AppendLog(message)
     while #lines >= 6 do table.remove(lines, 1) end
     table.insert(lines, string.format("[%s] %s", os.date("%H:%M:%S"), tostring(message)))
     logBox.Text = table.concat(lines, "\n")
+end
+
+function UIModule:UpdateMacroState(state)
+    state = type(state) == "table" and state or {}
+    local values = self._MacroStatusValues or {}
+    for _, key in ipairs({ "Status", "Action", "Type", "Unit" }) do
+        if values[key] then values[key].Text = tostring(state[key] or (key == "Unit" and "—" or "None")) end
+    end
+    if values.Status then
+        local status = tostring(state.Status or "Idle")
+        values.Status.TextColor3 = status == "Recording" and COLORS.Red
+            or status == "Playing" and COLORS.Green
+            or COLORS.Text
+    end
+    if self._MacroWaitingLabel then
+        self._MacroWaitingLabel.Text = "Waiting for: " .. tostring(state.WaitingFor or "Idle")
+    end
+    if state.MacroName and state.MacroName ~= "" and self.MacroNameInput and not self.MacroNameInput:IsFocused() then
+        self.MacroNameInput.Text = tostring(state.MacroName)
+    end
+    if tostring(state.Status) ~= "Recording" and self._SetRecordToggle then self._SetRecordToggle(false, true) end
+    if tostring(state.Status) ~= "Playing" and self._SetPlayToggle then self._SetPlayToggle(false, true) end
+end
+
+function UIModule:UpdateMacroProfiles(profiles, selected)
+    self.MacroProfiles = {}
+    for _, profile in ipairs(profiles or {}) do table.insert(self.MacroProfiles, tostring(profile)) end
+    table.sort(self.MacroProfiles, function(a, b) return a:lower() < b:lower() end)
+    local explicitSelection = selected and tostring(selected) or nil
+    self.SelectedMacroProfile = explicitSelection or self.SelectedMacroProfile
+    if not explicitSelection and not table.find(self.MacroProfiles, self.SelectedMacroProfile) then
+        self.SelectedMacroProfile = self.MacroProfiles[1]
+    end
+    local label = self.SelectedMacroProfile or "Select profile..."
+    if self._MacroProfileSelectorLabel then self._MacroProfileSelectorLabel.Text = label end
+    if self._MacroProfilesSubtitle then
+        self._MacroProfilesSubtitle.Text = #self.MacroProfiles == 0 and "No profiles found"
+            or string.format("%d profile(s) · selected %s", #self.MacroProfiles, label)
+    end
+    if self.MacroNameInput and self.SelectedMacroProfile and not self.MacroNameInput:IsFocused() then
+        self.MacroNameInput.Text = self.SelectedMacroProfile
+    end
 end
 
 local TOGGLE_DESCRIPTIONS = {
@@ -460,8 +725,16 @@ function UIModule:CreateToggle(name, defaultState, isAccentViolet, onToggle)
         TweenService:Create(knob, TWEEN_FAST, { Position = active and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3), BackgroundColor3 = active and COLORS.White or COLORS.TextDim }):Play()
     end
     row.Activated:Connect(function()
-        active = not active; render()
-        if onToggle then task.spawn(onToggle, active) end
+        local previous = active
+        active = not active
+        if onToggle then
+            local ok, err = pcall(onToggle, active)
+            if not ok then
+                active = previous
+                warn("[UI] Toggle failed: " .. tostring(err))
+            end
+        end
+        render()
     end)
     return row
 end
@@ -500,12 +773,24 @@ local function makeSelectionIndicator(parent, selected, accent)
     end
 end
 
+local function pruneSelection(selection, values, canSelect)
+    local valid = {}
+    for _, value in ipairs(values) do
+        if not canSelect or canSelect(value) then valid[tostring(value.Id)] = true end
+    end
+    for id in pairs(selection) do
+        if not valid[tostring(id)] then selection[id] = nil end
+    end
+end
+
 function UIModule:UpdateEvoList(candidates)
     self.CachedEvoCandidates = candidates or {}
+    pruneSelection(self.SelectedEvoUnits, self.CachedEvoCandidates)
     clearGuiRows(evoListScroll)
     evoListSubtitle.Text = string.format("%d eligible unit%s", #self.CachedEvoCandidates, #self.CachedEvoCandidates == 1 and "" or "s")
     if #self.CachedEvoCandidates == 0 then
         local empty = makeLabel(evoListScroll, "No evolution candidate is ready.", 11, COLORS.TextDim, FONT_MEDIUM, Enum.TextXAlignment.Center); empty.Size = UDim2.new(1, -3, 0, 64)
+        refreshSelectionLabels()
         return
     end
     for order, unit in ipairs(self.CachedEvoCandidates) do
@@ -520,7 +805,7 @@ function UIModule:UpdateEvoList(candidates)
         makeSelectionIndicator(row, selected, COLORS.Violet)
         bindHover(row, selected and COLORS.SurfaceHover or COLORS.Sidebar, COLORS.SurfaceHover, rowStroke, selected and COLORS.Violet or COLORS.BorderSoft, COLORS.Violet)
         row.Activated:Connect(function()
-            UIModule.SelectedEvoUnits[id] = UIModule.SelectedEvoUnits[id] and nil or true
+            if UIModule.SelectedEvoUnits[id] then UIModule.SelectedEvoUnits[id] = nil else UIModule.SelectedEvoUnits[id] = true end
             refreshSelectionLabels(); UIModule:UpdateEvoList(UIModule.CachedEvoCandidates)
         end)
     end
@@ -529,12 +814,14 @@ end
 
 function UIModule:UpdateSellList(units)
     self.CachedSellUnits = units or {}
+    pruneSelection(self.SelectedSellUnits, self.CachedSellUnits, function(unit) return unit.IsProtected ~= true end)
     clearGuiRows(sellListScroll)
     local visibleCount = 0
     for _, unit in ipairs(self.CachedSellUnits) do if self.SellFilters[tostring(unit.Rarity)] then visibleCount = visibleCount + 1 end end
     sellListSubtitle.Text = string.format("%d visible of %d owned", visibleCount, #self.CachedSellUnits)
     if visibleCount == 0 then
         local empty = makeLabel(sellListScroll, "No units match the active rarity filters.", 11, COLORS.TextDim, FONT_MEDIUM, Enum.TextXAlignment.Center); empty.Size = UDim2.new(1, -3, 0, 64)
+        refreshSelectionLabels()
         return
     end
     local layoutOrder = 0
@@ -556,7 +843,7 @@ function UIModule:UpdateSellList(units)
                 makeSelectionIndicator(row, selected, COLORS.Red)
                 bindHover(row, selected and COLORS.SurfaceHover or COLORS.Sidebar, COLORS.SurfaceHover, rowStroke, selected and COLORS.Red or COLORS.BorderSoft, COLORS.Red)
                 row.Activated:Connect(function()
-                    UIModule.SelectedSellUnits[id] = UIModule.SelectedSellUnits[id] and nil or true
+                    if UIModule.SelectedSellUnits[id] then UIModule.SelectedSellUnits[id] = nil else UIModule.SelectedSellUnits[id] = true end
                     refreshSelectionLabels(); UIModule:UpdateSellList(UIModule.CachedSellUnits)
                 end)
             end
@@ -599,24 +886,26 @@ sellClearButton.Activated:Connect(function()
     table.clear(UIModule.SelectedSellUnits); refreshSelectionLabels(); UIModule:UpdateSellList(UIModule.CachedSellUnits)
 end)
 
-local evoBusy = false
 evoActionButton.Activated:Connect(function()
     if evoBusy or not UIModule.Callbacks.OnEvoAction then return end
-    evoBusy = true; evoActionLabel.Text = "Processing evolution plan..."
+    evoBusy, evoActionButton.Active, evoActionButton.BackgroundTransparency = true, false, 0.25
+    refreshSelectionLabels()
     task.spawn(function()
         local ok, err = pcall(UIModule.Callbacks.OnEvoAction)
         if not ok then UIModule:AppendLog("Evolution action failed: " .. tostring(err)) end
-        evoBusy = false; refreshSelectionLabels()
+        evoBusy, evoActionButton.Active, evoActionButton.BackgroundTransparency = false, true, 0
+        refreshSelectionLabels()
     end)
 end)
-local sellBusy = false
 sellActionButton.Activated:Connect(function()
     if sellBusy or not UIModule.Callbacks.OnSellAction then return end
-    sellBusy = true; sellActionLabel.Text = "Waiting for inventory confirmation..."
+    sellBusy, sellActionButton.Active, sellActionButton.BackgroundTransparency = true, false, 0.25
+    refreshSelectionLabels()
     task.spawn(function()
         local ok, err = pcall(UIModule.Callbacks.OnSellAction)
         if not ok then UIModule:AppendLog("Sell action failed: " .. tostring(err)) end
-        sellBusy = false; refreshSelectionLabels()
+        sellBusy, sellActionButton.Active, sellActionButton.BackgroundTransparency = false, true, 0
+        refreshSelectionLabels()
     end)
 end)
 
@@ -625,6 +914,7 @@ table.insert(UIModule.Connections, UserInputService.InputBegan:Connect(function(
 end))
 
 function UIModule:Destroy()
+    if cameraViewportConnection then cameraViewportConnection:Disconnect() end
     for _, connection in ipairs(self.Connections) do pcall(function() connection:Disconnect() end) end
     table.clear(self.Connections)
     if screenGui then screenGui:Destroy() end
