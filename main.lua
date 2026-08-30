@@ -20,8 +20,8 @@ local COLORS = {
     BorderSoft = Color3.fromRGB(25, 25, 32),
 
     Text = Color3.fromRGB(238, 238, 242),
-    TextMuted = Color3.fromRGB(150, 150, 165),
-    TextDim = Color3.fromRGB(95, 95, 110),
+    TextMuted = Color3.fromRGB(174, 174, 190),
+    TextDim = Color3.fromRGB(126, 126, 145),
 
     Accent = Color3.fromRGB(0, 110, 254),
     AccentHover = Color3.fromRGB(30, 130, 255),
@@ -101,6 +101,9 @@ local UIModule = {
     _MacroWaitingLabel = nil,
     _MacroProfileSelectorLabel = nil,
     _MacroProfilesSubtitle = nil,
+    _MacroProfileList = nil,
+    _MacroProfileScrollPosition = Vector2.zero,
+    _TabScrollPositions = setmetatable({}, { __mode = "k" }),
 }
 
 -- UI Building Helpers
@@ -140,7 +143,7 @@ local function makeLabel(parent, text, size, color, font, alignment)
         BackgroundTransparency = 1,
         Text = text or "",
         TextColor3 = color or COLORS.Text,
-        TextSize = size or 13,
+        TextSize = math.max(11, size or 13),
         FontFace = font or FONT_MEDIUM,
         TextXAlignment = alignment or Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
@@ -374,6 +377,46 @@ local mainFrame = create("CanvasGroup", {
 addCorner(mainFrame, 14)
 addStroke(mainFrame, COLORS.Border, 0.1, 1)
 
+-- Lightweight ambient canvas: three low-opacity blobs animated by TweenService.
+-- No Heartbeat/RenderStepped work is created, so macro timing stays isolated.
+local ambientLayer = create("Frame", {
+    Name = "AmbientCanvas",
+    Size = UDim2.fromScale(1, 1),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ZIndex = 0,
+}, mainFrame)
+
+local function createAmbientBlob(size, position, color, targetPosition, duration)
+    local blob = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = position,
+        Size = UDim2.fromOffset(size, size),
+        BackgroundColor3 = color,
+        BackgroundTransparency = 0.92,
+        BorderSizePixel = 0,
+        ZIndex = 0,
+    }, ambientLayer)
+    addCorner(blob, size)
+    create("UIGradient", {
+        Color = ColorSequence.new(color, color:Lerp(COLORS.Canvas, 0.45)),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.18),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Rotation = 35,
+    }, blob)
+    local tween = TweenService:Create(blob, TweenInfo.new(duration, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+        Position = targetPosition,
+        Rotation = 18,
+    })
+    tween:Play()
+end
+
+createAmbientBlob(310, UDim2.fromScale(0.30, 0.18), COLORS.Accent, UDim2.fromScale(0.43, 0.31), 16)
+createAmbientBlob(260, UDim2.fromScale(0.84, 0.76), COLORS.Green, UDim2.fromScale(0.70, 0.61), 19)
+createAmbientBlob(220, UDim2.fromScale(0.68, 0.08), Color3.fromRGB(145, 75, 255), UDim2.fromScale(0.78, 0.23), 22)
+
 local uiScale = create("UIScale", { Scale = 1 }, mainFrame)
 local shadowScale = create("UIScale", { Scale = 1 }, mainShadow)
 
@@ -476,6 +519,14 @@ end
 
 function UIModule:SwitchTab(tabName)
     if not pageMeta[tabName] then return end
+    local previousView = tabViews[self.CurrentTab]
+    if previousView then
+        for _, descendant in ipairs(previousView:GetDescendants()) do
+            if descendant:IsA("ScrollingFrame") then
+                self._TabScrollPositions[descendant] = descendant.CanvasPosition
+            end
+        end
+    end
     self.CurrentTab = tabName
     if pageTitle then pageTitle.Text = pageMeta[tabName].Title end
     if pageSubtitle then pageSubtitle.Text = pageMeta[tabName].Subtitle end
@@ -490,6 +541,17 @@ function UIModule:SwitchTab(tabName)
     end
     for name, view in pairs(tabViews) do
         view.Visible = name == tabName
+    end
+    local activeView = tabViews[tabName]
+    if activeView then
+        task.defer(function()
+            for _, descendant in ipairs(activeView:GetDescendants()) do
+                if descendant:IsA("ScrollingFrame") then
+                    local savedPosition = self._TabScrollPositions[descendant]
+                    if savedPosition then descendant.CanvasPosition = savedPosition end
+                end
+            end
+        end)
     end
     requestRefresh()
 end
@@ -536,6 +598,9 @@ function UIModule:UpdateMacroState(state)
 end
 
 function UIModule:UpdateMacroProfiles(profiles, selected)
+    if self._MacroProfileList then
+        self._MacroProfileScrollPosition = self._MacroProfileList.CanvasPosition
+    end
     self.MacroProfiles = {}
     for _, profile in ipairs(profiles or {}) do
         table.insert(self.MacroProfiles, tostring(profile))
@@ -557,6 +622,39 @@ function UIModule:UpdateMacroProfiles(profiles, selected)
     if self.MacroNameInput and self.SelectedMacroProfile and not self.MacroNameInput:IsFocused() then
         self.MacroNameInput.Text = self.SelectedMacroProfile
     end
+    local profileList = self._MacroProfileList
+    if profileList then
+        clearGuiRows(profileList)
+        for index, profile in ipairs(self.MacroProfiles) do
+            local active = profile == self.SelectedMacroProfile
+            local row = create("TextButton", {
+                Name = "Profile_" .. profile,
+                Size = UDim2.new(1, -4, 0, 34),
+                BackgroundColor3 = active and COLORS.AccentSoft or COLORS.Sidebar,
+                BorderSizePixel = 0,
+                AutoButtonColor = false,
+                Text = "",
+                LayoutOrder = index,
+            }, profileList)
+            addCorner(row, 7)
+            local stroke = addStroke(row, active and COLORS.Accent or COLORS.BorderSoft, active and 0.25 or 0.2, 1)
+            local icon = makeIcon(row, ICONS.Macro, 13, active and COLORS.Accent or COLORS.TextMuted)
+            icon.Position = UDim2.fromOffset(10, 10)
+            local label = makeLabel(row, profile, 12, active and COLORS.Text or COLORS.TextMuted, FONT_SEMIBOLD)
+            label.Position = UDim2.fromOffset(31, 0)
+            label.Size = UDim2.new(1, -40, 1, 0)
+            bindHover(row, row.BackgroundColor3, COLORS.SurfaceHover, stroke, stroke.Color, COLORS.Accent)
+            row.Activated:Connect(function()
+                self.SelectedMacroProfile = profile
+                if self.MacroNameInput then self.MacroNameInput.Text = profile end
+                if self.Callbacks.OnMacroSelect then self.Callbacks.OnMacroSelect(profile) end
+                self:UpdateMacroProfiles(self.MacroProfiles, profile)
+            end)
+        end
+        task.defer(function()
+            if profileList.Parent then profileList.CanvasPosition = self._MacroProfileScrollPosition end
+        end)
+    end
 end
 
 local TOGGLE_DESCRIPTIONS = {
@@ -567,6 +665,9 @@ local TOGGLE_DESCRIPTIONS = {
     Summon = "Use the standard banner automation while it is enabled.",
     Lobby = "Return safely when configured Sprite Grey cap is reached.",
     HINAHUB = "Start external HinaHub automation module in lobby.",
+    Equip = "Confirm the strongest macro-compatible hotbar before dispatch.",
+    FX = "Disable only non-gameplay visual effects without touching placement data.",
+    Senku = "Reserve the recorded economy slots for Senku and Ichiraku when owned.",
 }
 
 local function getToggleDescription(name)
@@ -1627,7 +1728,7 @@ local function buildMacroTab(viewHost)
         end
     end)
 
-    local macroWarning = makeLabel(macroControlsBody, "Note: Mobile/Slow devices may affect macro execution timings.", 9, COLORS.TextDim, FONT_MEDIUM, Enum.TextXAlignment.Center)
+    local macroWarning = makeLabel(macroControlsBody, "Warning: Mobile/Slow Device may affect Macro Speed", 11, COLORS.Red, FONT_SEMIBOLD, Enum.TextXAlignment.Center)
     macroWarning.Position = UDim2.new(0, 0, 1, -20)
     macroWarning.Size = UDim2.new(1, 0, 0, 16)
 
@@ -1646,7 +1747,7 @@ local function buildMacroTab(viewHost)
             PlaceholderColor3 = COLORS.TextDim,
             Text = "",
             TextColor3 = COLORS.Text,
-            TextSize = 10,
+            TextSize = 12,
             FontFace = multiline and FONT_MONO or FONT_MEDIUM,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = multiline and Enum.TextYAlignment.Top or Enum.TextYAlignment.Center,
@@ -1671,25 +1772,16 @@ local function buildMacroTab(viewHost)
         return box
     end
 
-    local profileSelector = create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 36),
-        BackgroundColor3 = COLORS.SurfaceRaised,
-        BorderSizePixel = 0,
-        AutoButtonColor = false,
-        Text = "",
-    }, profilesBody)
-    addCorner(profileSelector, 8)
-    addStroke(profileSelector, COLORS.Accent, 0.3, 1)
+    local profileList = createScroll(profilesBody)
+    profileList.Name = "MacroProfileBrowser"
+    profileList.Size = UDim2.new(1, 0, 0, 126)
+    profileList.ScrollBarImageColor3 = COLORS.Accent
+    UIModule._MacroProfileList = profileList
 
-    local profileSelectorLabel = makeLabel(profileSelector, "Select profile...", 11, COLORS.Text, FONT_SEMIBOLD)
-    profileSelectorLabel.Position = UDim2.fromOffset(10, 0)
-    profileSelectorLabel.Size = UDim2.new(1, -20, 1, 0)
-    UIModule._MacroProfileSelectorLabel = profileSelectorLabel
-
-    local macroNameInput = makeInput(profilesBody, "Macro name", UDim2.fromOffset(0, 44), UDim2.new(1, 0, 0, 34), false)
+    local macroNameInput = makeInput(profilesBody, "Macro name", UDim2.fromOffset(0, 134), UDim2.new(1, 0, 0, 34), false)
     UIModule.MacroNameInput = macroNameInput
 
-    local profileButtons = create("Frame", { Position = UDim2.fromOffset(0, 86), Size = UDim2.new(1, 0, 0, 72), BackgroundTransparency = 1 }, profilesBody)
+    local profileButtons = create("Frame", { Position = UDim2.fromOffset(0, 176), Size = UDim2.new(1, 0, 0, 72), BackgroundTransparency = 1 }, profilesBody)
     create("UIGridLayout", { CellSize = UDim2.new(0.5, -4, 0, 32), CellPadding = UDim2.fromOffset(8, 6), SortOrder = Enum.SortOrder.LayoutOrder }, profileButtons)
 
     local function profileButton(text, icon, color, order, callbackName)
@@ -1721,31 +1813,16 @@ local function buildMacroTab(viewHost)
     profileButton("Export", ICONS.Clipboard, COLORS.Accent, 3, "OnMacroExport")
     profileButton("Refresh", ICONS.Settings, COLORS.TextMuted, 4, "OnMacroRefresh")
 
-    local importCaption = makeLabel(profilesBody, "IMPORT CONFIG", 9, COLORS.TextDim, FONT_BOLD)
-    importCaption.Position = UDim2.fromOffset(0, 166)
+    local importCaption = makeLabel(profilesBody, "IMPORT CONFIG", 11, COLORS.TextDim, FONT_BOLD)
+    importCaption.Position = UDim2.fromOffset(0, 256)
     importCaption.Size = UDim2.new(1, 0, 0, 14)
 
-    local importInput = makeInput(profilesBody, '{"steps":[...]} or paste raw config', UDim2.fromOffset(0, 184), UDim2.new(1, 0, 1, -230), true)
+    local importInput = makeInput(profilesBody, '{"steps":[...]} or paste raw config', UDim2.fromOffset(0, 274), UDim2.new(1, 0, 1, -320), true)
     UIModule.MacroImportInput = importInput
 
     local importButton = createActionButton(profilesBody, "Import Macro", ICONS.Upload, COLORS.Accent)
     importButton.Position = UDim2.new(0, 0, 1, -38)
     importButton.Size = UDim2.new(1, 0, 0, 36)
-
-    profileSelector.Activated:Connect(function()
-        if #UIModule.MacroProfiles == 0 then return end
-        local currentIndex = table.find(UIModule.MacroProfiles, UIModule.SelectedMacroProfile) or 0
-        currentIndex = currentIndex % #UIModule.MacroProfiles + 1
-        UIModule.SelectedMacroProfile = UIModule.MacroProfiles[currentIndex]
-        macroNameInput.Text = UIModule.SelectedMacroProfile
-        profileSelectorLabel.Text = UIModule.SelectedMacroProfile
-        if UIModule._MacroProfilesSubtitle then
-            UIModule._MacroProfilesSubtitle.Text = string.format("%d profile(s) · selected %s", #UIModule.MacroProfiles, UIModule.SelectedMacroProfile)
-        end
-        if UIModule.Callbacks.OnMacroSelect then
-            UIModule.Callbacks.OnMacroSelect(UIModule.SelectedMacroProfile)
-        end
-    end)
 
     importButton.Activated:Connect(function()
         if UIModule.Callbacks.OnMacroImport then
